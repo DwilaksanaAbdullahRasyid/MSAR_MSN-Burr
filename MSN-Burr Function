@@ -1,0 +1,9 @@
+functions 
+  {
+      real msnburr_lpdf(data real y, real alpha, real sigma, real mu) {
+          real k;
+          k=1/sqrt(2*3.141593)*(1+1/alpha)^(alpha+1);
+          return log(k/sigma * exp(-k*((y-mu)/sigma)) * (1+exp(-k*((y-mu)/sigma))/alpha) ^ (-(alpha+1)));
+          //return (log(1+exp(-k*(y-mu)/sigma)/alpha)^(-alpha)*k/sigma*exp(-k*(y-mu)/sigma)/(1+exp(-k*(y-mu)/sigma)/alpha));
+      }
+  }
