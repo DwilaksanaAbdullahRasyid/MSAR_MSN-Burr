@@ -1,0 +1,110 @@
+MSAR='
+functions 
+  {
+      real msnburr_lpdf(data real y, real alpha, real sigma, real mu) {
+          real k;
+          k=1/sqrt(2*3.141593)*(1+1/alpha)^(alpha+1);
+          return log(k/sigma * exp(-k*((y-mu)/sigma)) * (1+exp(-k*((y-mu)/sigma))/alpha) ^ (-(alpha+1)));
+          //return (log(1+exp(-k*(y-mu)/sigma)/alpha)^(-alpha)*k/sigma*exp(-k*(y-mu)/sigma)/(1+exp(-k*(y-mu)/sigma)/alpha));
+      }
+  }
+data {
+  int T;
+  vector[T] y;
+}
+parameters {
+  vector<lower = 0, upper = 1> [2] p;
+  //vector [2] p;
+  //vector<lower = 0> [2] alpha;
+  real <lower= 0.9,upper= 1.2> alpha1;
+  real <lower= 11.5  ,upper=20> alpha2;
+  vector<lower = 4, upper=30> [2] sigma;
+  //vector[2] mu;
+  vector[2] beta_0;
+  //vector<lower = -1, upper = 1>[2] beta_1;
+  real <lower = 0.7, upper = 1> beta_11;
+  real <lower = 0.7, upper = 1> beta_12;
+  //vector [2] beta_1;
+  real<lower = 0, upper = 1> xi1_init; 
+  real y_tm1_init;
+  real y_tm2_init;
+}
+transformed parameters {
+  matrix[T, 2] eta;
+  matrix[T, 2] xi;
+  vector[T] f;
+  vector[T] regime;
+
+  // fill in etas
+  for (t in 1:T) {
+    if(t==1) {
+      eta[t,1] = exp(msnburr_lpdf(y[t]| beta_0[1] + beta_11 * y_tm1_init, sigma[1], alpha1));
+      eta[t,2] = exp(msnburr_lpdf(y[t]| beta_0[2] + beta_12 * y_tm2_init, sigma[2], alpha2));
+    } else {
+      eta[t,1] = exp(msnburr_lpdf(y[t]| beta_0[1] + beta_11 * y[t-1], sigma[1], alpha1)); 
+      eta[t,2] = exp(msnburr_lpdf(y[t]| beta_0[2] + beta_12 * y[t-1], sigma[2], alpha2));
+    }
+  }
+  
+  // work out likelihood contributions
+  
+  for (t in 1:T) {
+    // for the first observation
+    if(t==1) {
+      f[t] = p[1]*xi1_init*eta[t,1] + // stay in state 1
+             (1 - p[1])*xi1_init*eta[t,2] + // transition from 1 to 2
+             p[2]*(1 - xi1_init)*eta[t,2] + // stay in state 2 
+             (1 - p[2])*(1 - xi1_init)*eta[t,1]; // transition from 2 to 1
+      
+      xi[t,1] = (p[1]*xi1_init*eta[t,1] +(1 - p[2])*(1 - xi1_init)*eta[t,1])/f[t];
+      xi[t,2] = 1.0 - xi[t,1];
+    } else {
+    // and for the rest
+      f[t] = p[1]*xi[t-1,1]*eta[t,1] + // stay in state 1
+             (1 - p[1])*xi[t-1,1]*eta[t,2] + // transition from 1 to 2
+             p[2]*xi[t-1,2]*eta[t,2] + // stay in state 2 
+             (1 - p[2])*xi[t-1,2]*eta[t,1]; // transition from 2 to 1
+      // work out xi
+      xi[t,1] = (p[1]*xi[t-1,1]*eta[t,1] +(1 - p[2])*xi[t-1,2]*eta[t,1])/f[t];
+      // there are only two states so the probability of the other state is 1 - prob of the first
+      xi[t,2] = 1.0 - xi[t,1];
+    }
+    if(xi[t,1]>xi[t,2]){
+		    regime[t] = 1;
+	   }
+	   else{
+		    regime[t] = 2;
+	   }
+  }
+  
+}
+model {
+  // priors
+  //mu~normal(0,1);
+  p ~ normal(0.7, 0.05);
+  beta_0 ~ normal(0, 1);
+  beta_11 ~ normal(0.9, .2);
+  beta_12 ~ normal(0.9, .2);
+  //sigma[1] ~ inv_gamma(5,3);
+  //sigma[2] ~ inv_gamma(1e3, 5e3);
+  sigma[1] ~ normal(0.5,1);
+  sigma[2] ~ normal(5,1);
+  //sigma ~ normal (20,10);
+  alpha1 ~ normal(0,.5);
+  alpha2 ~ normal(0,.5);
+  xi1_init ~ beta(1, 2);
+  y_tm1_init ~ normal(1, .1);
+  y_tm2_init ~ normal(1, .1);
+  
+  
+  // likelihood is really easy here!
+  target += sum(log(f));
+}
+
+generated quantities {
+  real dev;
+  dev=0;
+  for ( t in 1:T ) {
+    dev = dev + (-2)*log(f[t]);
+  }
+}'
